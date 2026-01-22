@@ -6,12 +6,16 @@ from datetime import datetime
 from getpass import getpass
 import threading
 import pyperclip
+import platform
 import base64
 import time
 import json
 import sys
 import os
 import gc
+
+def clear_terminal():
+    os.system('cls' if platform.system() == "Windows" else 'clear')
 
 # class that manages the whole thing
 class PasswordManager:
@@ -170,14 +174,19 @@ class PasswordManager:
             print("Password manager menu:\n1. Add 2. Get 3. List 4. Change/Delete 5. Exit\n")
             service = input("Which menu option is needed(integers): ")
             if service == "1":
+                clear_terminal()
                 self._add_entry()
             elif service == "2":
+                clear_terminal()
                 self._get_entry()
             elif service == "3":
+                clear_terminal()
                 self._list_services()
             elif service == "4":
+                clear_terminal()
                 self._change_del_entry()
             elif service == "5":
+                clear_terminal()
                 print("Goodbye!\n")
                 self._clear_sensitive_data()
                 break
