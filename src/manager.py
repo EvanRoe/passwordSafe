@@ -1,5 +1,6 @@
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from cryptography.fernet import InvalidToken
 from cryptography.fernet import Fernet
 from datetime import datetime
 from getpass import getpass
@@ -130,31 +131,43 @@ class PasswordManager:
     def load_vault(self):
         if not os.path.exists(self.vault_file):
             return False
-      
-        with open(self.vault_file, 'rb') as f: 
-            # read salt and salt length
-            salt_len = int.from_bytes(f.read(4), 'big')
-            self.salt = f.read(salt_len)               
-            enc_bytes = f.read()
 
-        json_string = self.decrypt_data(enc_bytes, self.key)
-        data = json.loads(json_string)
+        try:
+            with open(self.vault_file, 'rb') as f: 
+                # read salt and salt length
+                salt_len = int.from_bytes(f.read(4), 'big')
+                self.salt = f.read(salt_len)               
+                enc_bytes = f.read()
 
-        # convert vault data into bytes
-        self.vault = {}
-        for service, entry_dict in data["vault"].items():
-            self.vault[service] = {}
-            for name, value in entry_dict.items():
-                if name == "service":
-                    self.vault[service][name] = value
-                else:
-                    self.vault[service][name] = \
-                    base64.b64decode(value)
-        return True
+            json_string = self.decrypt_data(enc_bytes, self.key)
+            data = json.loads(json_string)
+
+            # convert vault data into bytes
+            self.vault = {}
+            for service, entry_dict in data["vault"].items():
+                self.vault[service] = {}
+                for name, value in entry_dict.items():
+                    if name == "service":
+                        self.vault[service][name] = value
+                    else:
+                        self.vault[service][name] = \
+                        base64.b64decode(value)
+            return True
+        
+        except Exception as e:
+            self.key = None
+            self.salt = None
+            self.vault = {}
+
+            if isinstance(e, InvalidToken):
+                print("Wrong master password!\n")
+            else:
+                print(f"Failed to load vault: {e}")
+            return False
     
     def run_menu(self):
-        print("Password manager menu:\n1. Add 2. Get 3. List 4. Change/Delete 5. Exit\n")
         while True:
+            print("Password manager menu:\n1. Add 2. Get 3. List 4. Change/Delete 5. Exit\n")
             service = input("Which menu option is needed(integers): ")
             if service == "1":
                 self._add_entry()
@@ -336,20 +349,23 @@ def main():
     if pm.initialise():
         print("Setup complete.")
     else:
-        password = getpass("Bruh type in the master: ")
-        # load salt from metadata
-        if os.path.exists(pm.vault_file):
-            with open(pm.vault_file, 'rb') as f:
-                salt_len = int.from_bytes(f.read(4), 'big')
-                pm.salt = f.read(salt_len)
-        pm.key = pm.derive_key(password, pm.salt)
+        for attempt in range(3):
+            password = getpass("Bruh type in the master: ")
+            # load salt from metadata
+            if os.path.exists(pm.vault_file):
+                with open(pm.vault_file, 'rb') as f:
+                    salt_len = int.from_bytes(f.read(4), 'big')
+                    pm.salt = f.read(salt_len)
+            pm.key = pm.derive_key(password, pm.salt)
 
-        # load the vault
-        if pm.load_vault():
-            pass
-        else:
-            print("Failed to unlock the vault?! wHO aRE yOU?")
-            return
+            # load the vault
+            if pm.load_vault():
+                break
+            else:
+                if attempt == 2:
+                    print("Too many failed attempts! wHO aRE yOU?")
+                    return
+        password = "x" * len(password)
     pm.run_menu()
 
 if __name__ == "__main__":
