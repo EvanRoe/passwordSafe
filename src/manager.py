@@ -1,3 +1,4 @@
+# =============== IMPORTS ===============
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.fernet import InvalidToken
@@ -14,11 +15,14 @@ import sys
 import os
 import gc
 
+# =============== UTILITY FUNCTIONS ===============
 def clear_terminal():
     os.system('cls' if platform.system() == "Windows" else 'clear')
 
-# class that manages the whole thing
+# =============== PASSWORD MANAGER CLASS ===============
 class PasswordManager:
+
+# =============== INITIALISATION ===============
     # initialising values
     def __init__(self, vault_file="vault.json"):
         self.vault_file = vault_file
@@ -51,6 +55,8 @@ class PasswordManager:
             pw1 = pw2 = "x" * len(pw1)
             return True
         return False
+    
+# =============== CORE ENCRYPTION ===============
 
     # using PBKDF2HMAC to "blend" the password iterations times with salt key
     def derive_key(self, password: str, salt: bytes) -> bytes:
@@ -71,6 +77,8 @@ class PasswordManager:
     def decrypt_data(self, encrypted_data: bytes, key: bytes) -> str:
         f = Fernet(key)
         return f.decrypt(encrypted_data).decode()
+    
+# =============== ENTRY MANAGEMENT ===============
     
     # each password entry is a dict with other parts, kinda fun having all that data
     def _create_entry(self, service: str, username: str, password: str, notes="") -> dict:
@@ -99,6 +107,8 @@ class PasswordManager:
             else:
                 dec_entry[name] = self.decrypt_data(value, key)
         return dec_entry
+    
+# =============== FILE OPERATIONS ===============
     
     def save_vault(self):
         json_vault = {}
@@ -168,6 +178,8 @@ class PasswordManager:
             else:
                 print(f"Failed to load vault: {e}")
             return False
+        
+# =============== USER INTERFACE ===============
     
     def run_menu(self):
         while True:
@@ -267,31 +279,6 @@ class PasswordManager:
                 print("Invalid input, try again.\n")
 
         self._setup_clipboard_timeout(dec_entry["password"])
-
-    def _setup_clipboard_timeout(self, text_to_clear, timeout_seconds=30):
-        # store password in mutable list
-        password_ref = [text_to_clear]
-
-        def clear_after_delay(pw_list, seconds):
-            time.sleep(seconds)
-            # check if clipboard still has the password
-            try:
-                if pyperclip.paste() == pw_list[0]:
-                    pyperclip.copy("")
-            except:
-                pass
-            finally:
-                # clear the text from thread memory
-                if pw_list and pw_list[0]:
-                    pw_list[0] = "x" * len(pw_list[0])
-                    pw_list.clear()
-
-        timer = threading.Thread(target=clear_after_delay,
-                                 args=(password_ref, timeout_seconds))
-        timer.daemon = True # thread dies when main program exits
-        timer.start()
-        return
-
         
     def _list_services(self):
         if not self.vault:
@@ -354,6 +341,29 @@ class PasswordManager:
             else:
                 print("Type either 1 or 2 for change or delete respectively, or 3 to exit.")
 
+    def _setup_clipboard_timeout(self, text_to_clear, timeout_seconds=30):
+        # store password in mutable list
+        password_ref = [text_to_clear]
+
+        def clear_after_delay(pw_list, seconds):
+            time.sleep(seconds)
+            # check if clipboard still has the password
+            try:
+                if pyperclip.paste() == pw_list[0]:
+                    pyperclip.copy("")
+            except:
+                pass
+            finally:
+                # clear the text from thread memory
+                if pw_list and pw_list[0]:
+                    pw_list[0] = "x" * len(pw_list[0])
+                    pw_list.clear()
+
+        timer = threading.Thread(target=clear_after_delay,
+                                 args=(password_ref, timeout_seconds))
+        timer.daemon = True # thread dies when main program exits
+        timer.start()
+        return
     
     def _clear_sensitive_data(self):
         self.key = None
@@ -361,9 +371,7 @@ class PasswordManager:
         gc.collect()
         print("Sensitive data cleared from memory.\n")
             
-
-    
-
+# =============== MAIN FUNCTIONS ===============
     
 def main():
     pm = PasswordManager()
