@@ -1,12 +1,16 @@
-from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
-from getpass import getpass
+from cryptography.fernet import Fernet
 from datetime import datetime
+from getpass import getpass
+import threading
+import pyperclip
 import base64
+import time
 import json
-import os
 import sys
+import os
+import gc
 
 # class that manages the whole thing
 class PasswordManager:
@@ -65,30 +69,30 @@ class PasswordManager:
     
     # each password entry is a dict with other parts, kinda fun having all that data
     def _create_entry(self, service: str, username: str, password: str, notes="") -> dict:
-        current_time = datetime.now()
+        current_time = datetime.now().isoformat()
         entry = {"service": service,
-                 "user": username,
-                 "pass": password,
+                 "username": username,
+                 "password": password,
                  "notes": notes,
                  "timestamp": current_time}
         return entry
     
     def _encrypt_entry(self, entry_dict: dict, key: bytes) -> dict:
         enc_entry = {}
-        for type, entry in entry_dict.items():
-            if(type == "service"):
-                enc_entry[type] = entry
+        for name, value in entry_dict.items():
+            if(name == "service"):
+                enc_entry[name] = value
             else:
-                enc_entry[type] = self.encrypt_data(entry, key)
+                enc_entry[name] = self.encrypt_data(value, key)
         return enc_entry
     
     def _decrypt_entry(self, enc_entry: dict, key: bytes) -> dict:
         dec_entry = {}
-        for type, entry in enc_entry.items():
-            if(type == "service"):
-                dec_entry[type] = entry
+        for name, value in enc_entry.items():
+            if(name == "service"):
+                dec_entry[name] = value
             else:
-                dec_entry[type] = self.decrypt_data(entry, key)
+                dec_entry[name] = self.decrypt_data(value, key)
         return dec_entry
     
     def save_vault(self):
@@ -106,7 +110,6 @@ class PasswordManager:
         # create complete data package
         complete_data = {
             "metadata": {
-                "salt": base64.b64encode(self.salt).decode('utf-8'),
                 "iterations": 480000,
                 "version": "1.0",
                 "created": datetime.now().isoformat()
@@ -119,19 +122,23 @@ class PasswordManager:
         enc_bytes = self.encrypt_data(json_string, self.key)
         # write encrypted bytes to file
         with open(self.vault_file, 'wb') as f: # 'wb' = write binary
+            # write salt length and salt
+            f.write(len(self.salt).to_bytes(4, 'big'))
+            f.write(self.salt)
             f.write(enc_bytes)
 
     def load_vault(self):
         if not os.path.exists(self.vault_file):
             return False
       
-        with open(self.vault_file, 'rb') as f:                
+        with open(self.vault_file, 'rb') as f: 
+            # read salt and salt length
+            salt_len = int.from_bytes(f.read(4), 'big')
+            self.salt = f.read(salt_len)               
             enc_bytes = f.read()
 
         json_string = self.decrypt_data(enc_bytes, self.key)
         data = json.loads(json_string)
-        # extract metadata
-        self.salt = base64.b64decode(data["metadata"]["salt"])
 
         # convert vault data into bytes
         self.vault = {}
@@ -143,31 +150,21 @@ class PasswordManager:
                 else:
                     self.vault[service][name] = \
                     base64.b64decode(value)
-
-    def load_metadata(self):
-        if not os.path.exists(self.vault_file):
-            return None
-        with open(self.vault_file, 'rb') as f:                
-            enc_bytes = f.read()
-
-        json_string = self.decrypt_data(enc_bytes, self.key)
-        data = json.loads(json_string)
-        # return salt
-        return data["metadata"]
+        return True
     
     def run_menu(self):
         print("Password manager menu:\n1. Add 2. Get 3. List 4. Change/Delete 5. Exit\n")
         while True:
-            service = input("Which service is needed: ")
-            if service == 1:
+            service = input("Which menu option is needed(integers): ")
+            if service == "1":
                 self._add_entry()
-            elif service == 2:
+            elif service == "2":
                 self._get_entry()
-            elif service == 3:
+            elif service == "3":
                 self._list_services()
-            elif service == 4:
+            elif service == "4":
                 self._change_del_entry()
-            elif service == 5:
+            elif service == "5":
                 print("Goodbye!\n")
                 self._clear_sensitive_data()
                 break
@@ -176,22 +173,96 @@ class PasswordManager:
     
     def _add_entry(self):
         service = input("Type the service name: ")
+        if not service:
+            print("Service name required.\n")
+            return
+        
+        if service in self.vault:
+            print("Going to change menu.\n")
+            self._change_del_entry()
+            return
+
         username = input("Type the username of the account: ")
+        if not username:
+            print("Username required.\n")
+            return
+        
         password = getpass("Type in the password slowly: ")
-        notes = input("Any notes for this entry?: ")
+        if not password:
+            print("Password required.\n")
+            return
+         
+        notes = input("Any notes for this entry?: ").strip()
         new_entry = self._create_entry(service, username, password, notes)
-        enc_entry = self._encrypt_entry(new_entry)
+        enc_entry = self._encrypt_entry(new_entry, self.key)
         self.vault[service] = enc_entry
         self.save_vault()
+        print(f"{service} saved successfully!")
 
     def _get_entry(self):
-        service = input("Which service do you need: ")
+        if not self.vault:
+            print("Vault is empty.\n")
+            return
+        
+        self._list_services()
+        service = input("Which service do you need: ").strip()
+
+        if service not in self.vault:
+            print(f"{service} not found in vault")
+            return
+        
         enc_entry = self.vault[service]
         dec_entry = self._decrypt_entry(enc_entry, self.key)
-        print(f"For {service}\nthe username is {dec_entry["username"]}\n \
-              the password is {dec_entry["password"]} ")
+        print(f"For {service}\nthe username is {dec_entry['username']}\n \
+              the password is {dec_entry['password']}\n")
+        print(f"Added: {datetime.fromisoformat(dec_entry['timestamp'])}")
+
+        if dec_entry['notes']:
+            print(f"the notes are {dec_entry['notes']}\n")
+
+        while True:
+            answer = input("Copy password to clipboard (y/n): ")
+
+            if answer == "y":
+                pyperclip.copy(dec_entry["password"])
+                break
+            elif answer == "n":
+                break
+            else:
+                print("Invalid input, try again.\n")
+
+        self._setup_clipboard_timeout(dec_entry["password"])
+
+    def _setup_clipboard_timeout(self, text_to_clear, timeout_seconds=30):
+        # store password in mutable list
+        password_ref = [text_to_clear]
+
+        def clear_after_delay(pw_list, seconds):
+            time.sleep(seconds)
+            # check if clipboard still has the password
+            try:
+                if pyperclip.paste() == pw_list[0]:
+                    pyperclip.copy("")
+            except:
+                pass
+            finally:
+                # clear the text from thread memory
+                if pw_list and pw_list[0]:
+                    pw_list[0] = "x" * len(pw_list[0])
+                    pw_list.clear()
+
+        timer = threading.Thread(target=clear_after_delay,
+                                 args=(password_ref, timeout_seconds))
+        timer.daemon = True # thread dies when main program exits
+        timer.start()
+        return
+
         
     def _list_services(self):
+        if not self.vault:
+            print("Vault is empty.\n")
+            return
+        
         print("These are the passwords saved:\n")
         index = 1
         for service in self.vault:
@@ -199,16 +270,61 @@ class PasswordManager:
             index += 1
     
     def _change_del_entry(self):
-        option = input("Change(type 1) or delete(type 2) an entry (or 3 for the menu): ")
-        if option == 1:
-            pass
-        elif option == 2:
-            pass
-        elif option == 3:
-            self.run_menu()
-        else:
-            print("Type either 1 or 2 for change or delete respectively.")
-            self._change_del_entry()
+        if not self.vault:
+            print("Vault is empty.\n")
+            return
+        
+        while True:
+            option = input("Change(type 1) or delete(type 2) an entry (or 3 for the menu): ")
+
+            if option == "1":
+                self._list_services()
+                service = input("What service do you want to change: ")
+
+                if not service or service not in self.vault:
+                    print("Correct service name is needed.\n")
+                    return
+                
+                enc_entry = self.vault[service]
+                dec_entry = self._decrypt_entry(enc_entry, self.key)
+                new_password = getpass("What is the new password: ")
+
+                if not new_password:
+                    print("Password is required.\n")
+                    return
+
+                dec_entry["password"] = new_password
+                enc_entry = self._encrypt_entry(dec_entry, self.key)
+                self.vault[service] = enc_entry
+                self.save_vault()
+                print(f"{service} changed successfully.\n")
+                return
+
+            elif option == "2":
+                self._list_services()
+                service = input("What service do you want to delete: ")
+
+                if not service or service not in self.vault:
+                    print("Correct service name is needed.\n")
+                    return
+                
+                del self.vault[service]
+                self.save_vault()
+                print(f"{service} deleted successfully.\n")
+                return
+
+            elif option == "3":
+                return
+
+            else:
+                print("Type either 1 or 2 for change or delete respectively, or 3 to exit.")
+
+    
+    def _clear_sensitive_data(self):
+        self.key = None
+        self.vault = {}
+        gc.collect()
+        print("Sensitive data cleared from memory.\n")
             
 
     
@@ -222,8 +338,10 @@ def main():
     else:
         password = getpass("Bruh type in the master: ")
         # load salt from metadata
-        metadata = pm.load_metadata()
-        pm.salt = base64.b64decode(metadata["salt"])
+        if os.path.exists(pm.vault_file):
+            with open(pm.vault_file, 'rb') as f:
+                salt_len = int.from_bytes(f.read(4), 'big')
+                pm.salt = f.read(salt_len)
         pm.key = pm.derive_key(password, pm.salt)
 
         # load the vault
@@ -233,4 +351,7 @@ def main():
             print("Failed to unlock the vault?! wHO aRE yOU?")
             return
     pm.run_menu()
+
+if __name__ == "__main__":
+    main()
         
