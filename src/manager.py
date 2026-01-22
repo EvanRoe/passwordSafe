@@ -2,17 +2,18 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from getpass import getpass
-import datetime
+from datetime import datetime
 import base64
 import json
 import os
+import sys
 
 # class that manages the whole thing
 class PasswordManager:
     # initialising values
     def __init__(self, vault_file="vault.json"):
         self.vault_file = vault_file
-        self.vault_file = {}
+        self.vault = {}
         self.salt = None
         self.key = None
 
@@ -39,6 +40,8 @@ class PasswordManager:
             print(f"New vault created at {self.vault_file}")
             # clear password from memory
             pw1 = pw2 = "x" * len(pw1)
+            return True
+        return False
 
     # using PBKDF2HMAC to "blend" the password iterations times with salt key
     def derive_key(self, password: str, salt: bytes) -> bytes:
@@ -151,9 +154,64 @@ class PasswordManager:
         data = json.loads(json_string)
         # return salt
         return data["metadata"]
+    
+    def run_menu(self):
+        print("Password manager menu:\n1. Add 2. Get 3. List 4. Change/Delete 5. Exit\n")
+        while True:
+            service = input("Which service is needed: ")
+            if service == 1:
+                self._add_entry()
+            elif service == 2:
+                self._get_entry()
+            elif service == 3:
+                self._list_services()
+            elif service == 4:
+                self._change_del_entry()
+            elif service == 5:
+                print("Goodbye!\n")
+                self._clear_sensitive_data()
+                break
+            else:
+                print("Invalid input.\n")
+    
+    def _add_entry(self):
+        service = input("Type the service name: ")
+        username = input("Type the username of the account: ")
+        password = getpass("Type in the password slowly: ")
+        notes = input("Any notes for this entry?: ")
+        new_entry = self._create_entry(service, username, password, notes)
+        enc_entry = self._encrypt_entry(new_entry)
+        self.vault[service] = enc_entry
+        self.save_vault()
 
+    def _get_entry(self):
+        service = input("Which service do you need: ")
+        enc_entry = self.vault[service]
+        dec_entry = self._decrypt_entry(enc_entry, self.key)
+        print(f"For {service}\nthe username is {dec_entry["username"]}\n \
+              the password is {dec_entry["password"]} ")
+        
+    def _list_services(self):
+        print("These are the passwords saved:\n")
+        index = 1
+        for service in self.vault:
+            print(f"{index}. {service}\n")
+            index += 1
+    
+    def _change_del_entry(self):
+        option = input("Change(type 1) or delete(type 2) an entry (or 3 for the menu): ")
+        if option == 1:
+            pass
+        elif option == 2:
+            pass
+        elif option == 3:
+            self.run_menu()
+        else:
+            print("Type either 1 or 2 for change or delete respectively.")
+            self._change_del_entry()
+            
 
-
+    
 
     
 def main():
@@ -164,7 +222,7 @@ def main():
     else:
         password = getpass("Bruh type in the master: ")
         # load salt from metadata
-        metadata = pm.load_metada()
+        metadata = pm.load_metadata()
         pm.salt = base64.b64decode(metadata["salt"])
         pm.key = pm.derive_key(password, pm.salt)
 
