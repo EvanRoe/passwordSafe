@@ -226,12 +226,25 @@ class PasswordManager:
             print("Vault is empty.\n")
             return
         
-        self._list_services()
-        service = input("Which service do you need: ").strip()
-
-        if service not in self.vault:
-            print(f"{service} not found in vault")
-            return
+        services = list(self.vault.keys())
+        print("These are the passwords saved:\n")
+        
+        for i, service in enumerate(services, 1):
+            print(f"{i}. {service}\n")
+        
+        # get selection by number
+        while True:
+            try:
+                selection = input("Enter the number of the service: ").strip()
+                index = int(selection) - 1
+                
+                if 0 <= index < len(services):
+                    service = services[index]
+                    break
+                else:
+                    print("Enter one of the numbers listed.\n")
+            except ValueError:
+                print("Please enter a valid number.\n")
         
         enc_entry = self.vault[service]
         dec_entry = self._decrypt_entry(enc_entry, self.key)
