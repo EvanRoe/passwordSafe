@@ -24,8 +24,12 @@ class PasswordManager:
 
 # =============== INITIALISATION ===============
     # initialising values
-    def __init__(self, vault_file="vault.json"):
-        self.vault_file = vault_file
+    def __init__(self, vault_file=None):
+        if vault_file:
+            self.vault_file = vault_file
+        else:
+            self.vault_file = r"C:\Evan\OneDrive - Where Everything Is\Stuff\uhhh\vault.json"
+            os.makedirs(os.path.dirname(self.vault_file), exist_ok=True)
         self.vault = {}
         self.salt = None
         self.key = None
