@@ -238,11 +238,7 @@ class PasswordManager:
             print("Vault is empty.\n")
             return
         
-        services = list(self.vault.keys())
-        print("These are the passwords saved:\n")
-        
-        for i, service in enumerate(services, 1):
-            print(f"{i}. {service}\n")
+        services = self._list_services()
         
         # get selection by number
         while True:
@@ -280,16 +276,18 @@ class PasswordManager:
 
         self._setup_clipboard_timeout(dec_entry["password"])
         
-    def _list_services(self):
+    def _list_services(self) -> list:
         if not self.vault:
             print("Vault is empty.\n")
             return
         
+        services = list(self.vault.keys())
         print("These are the passwords saved:\n")
-        index = 1
-        for service in self.vault:
-            print(f"{index}. {service}\n")
-            index += 1
+        
+        for i, service in enumerate(services, 1):
+            print(f"{i}. {service}\n")
+
+        return services
     
     def _change_del_entry(self):
         if not self.vault:
@@ -300,12 +298,21 @@ class PasswordManager:
             option = input("Change(type 1) or delete(type 2) an entry (or 3 for the menu): ")
 
             if option == "1":
-                self._list_services()
-                service = input("What service do you want to change: ")
-
-                if not service or service not in self.vault:
-                    print("Correct service name is needed.\n")
-                    return
+                services = self._list_services()
+                
+                # get selection by number
+                while True:
+                    try:
+                        selection = input("Enter the number of the service: ").strip()
+                        index = int(selection) - 1
+                        
+                        if 0 <= index < len(services):
+                            service = services[index]
+                            break
+                        else:
+                            print("Enter one of the numbers listed.\n")
+                    except ValueError:
+                        print("Please enter a valid number.\n")
                 
                 enc_entry = self.vault[service]
                 dec_entry = self._decrypt_entry(enc_entry, self.key)
@@ -323,12 +330,21 @@ class PasswordManager:
                 return
 
             elif option == "2":
-                self._list_services()
-                service = input("What service do you want to delete: ")
-
-                if not service or service not in self.vault:
-                    print("Correct service name is needed.\n")
-                    return
+                services = self._list_services()
+                
+                # get selection by number
+                while True:
+                    try:
+                        selection = input("Enter the number of the service: ").strip()
+                        index = int(selection) - 1
+                        
+                        if 0 <= index < len(services):
+                            service = services[index]
+                            break
+                        else:
+                            print("Enter one of the numbers listed.\n")
+                    except ValueError:
+                        print("Please enter a valid number.\n")
                 
                 del self.vault[service]
                 self.save_vault()
